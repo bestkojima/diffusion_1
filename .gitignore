@@ -1,0 +1,7 @@
+# 忽略字节码文件
+*.pyc
+mnist*
+root_mnist/
+root_mnist_test/
+test_local/
+test*

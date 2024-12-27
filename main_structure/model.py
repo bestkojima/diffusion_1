@@ -540,6 +540,7 @@ class Unet(nn.Module):
     def __init__(
         self,
         dim,
+        image_size,
         out_dim = None,
         dim_mults=(1, 2, 4, 8),
         channels = 3,
@@ -585,7 +586,7 @@ class Unet(nn.Module):
         self.mid_attn = Residual(PreNorm(mid_dim, LinearAttention(mid_dim)))
         self.mid_block2 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
 
-        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out)):
             is_last = ind >= (num_resolutions - 1)
 
             self.ups.append(nn.ModuleList([
@@ -600,11 +601,11 @@ class Unet(nn.Module):
             ConvNextBlock(dim, dim),
             nn.Conv2d(dim, out_dim, 1)
         )
-
+        self.skip_output=[]
     def forward(self, x, time):
         orig_x = x
         t = self.time_mlp(time) if exists(self.time_mlp) else None
-
+        self.skip_output.clear()
         h = []
 
         for convnext, convnext2, attn, downsample in self.downs:
@@ -612,22 +613,22 @@ class Unet(nn.Module):
             x = convnext2(x, t)
             x = attn(x)
             h.append(x)
+            self.skip_output.append(x.detach().clone())
             x = downsample(x)
 
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
-
+        
         for convnext, convnext2, attn, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
             x = convnext(x, t)
             x = convnext2(x, t)
             x = attn(x)
             x = upsample(x)
-        if self.residual:
-            return self.final_conv(x) + orig_x
+     
 
-        return self.final_conv(x)
+        return x
 
 
 
@@ -682,7 +683,7 @@ class secondUnet(nn.Module):
         self.mid_attn = Residual(PreNorm(mid_dim, LinearAttention(mid_dim)))
         self.mid_block2 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
 
-        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out)):
             is_last = ind >= (num_resolutions - 1)
 
             self.ups.append(nn.ModuleList([
@@ -737,29 +738,30 @@ class secondUnet(nn.Module):
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
         
+        
+       
+        
         #append module here
         outputs = self.dca_model((h[0], h[1], h[2], h[3]))
         outputs=list(outputs)
-        for i in outputs:
-            print(i.shape)
-        ###
-        print("self.ups",(len(self.ups)))
-        print("self.down",(len(self.downs)))
+        
+       
+       
         for index, (convnext, convnext2, attn, upsample)in enumerate(self.ups):
-            print(len(h)-1-index)
-            # fusion_out=self.dual_percep_reward_list[len(h)-1-index](outputs.pop(),h.pop())
-            x = torch.cat((x, outputs.pop()), dim=1)
+            
+            fusion_out=self.dual_percep_reward_list[len(h)-1](outputs.pop(),h.pop())
+            x = torch.cat((x, fusion_out), dim=1)
+          
             x = convnext(x, t)
             x = convnext2(x, t)
             x = attn(x)
+            
             x = upsample(x)
-            print(x.shape)
-        if self.residual:
-            return self.final_conv(x) + orig_x
-        print(len(outputs))
+            
+       
         
-        print(self.final_conv(x).shape)
-        return self.final_conv(x)
+        
+        return x
 
 
 
@@ -794,10 +796,19 @@ if __name__=="__main__":
     ).to("cuda")
     input=torch.randn(1,3,32,32).to("cuda")
     step = torch.full((1,), 3, dtype=torch.long).to("cuda")
-    from torchinfo import summary
-    summary(model,input_size=((1,3,32,32),([1])))
-    print(step.shape)
+    # from torchinfo import summary
+    # summary(model,input_size=((1,3,32,32),([1])))
+    
     print(model(input,step).shape)
+    def grad_norm(model):
+        total_norm = 0.0
+        for p in model.parameters():
+                if p.grad is not None:  # 检查梯度是否为 None
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** (1. / 2)
+        return total_norm
+    print(grad_norm(model))
 
  
     

@@ -1,0 +1,62 @@
+
+###
+#datasets
+#1 cifar10
+#2 mnist
+#3 celeba
+#4 afhq
+
+####
+
+
+test:
+  dim: 8  # model_config.dim
+  dim_mults: [1, 2, 4, 8]  # model_config.dim_mults
+  img_size: 32  # model_config.img_size
+  channels: 3  # model_config.channels
+  name: 'test'  # model_config.name
+
+  # 原始目录结构：schduler_config
+  numsteps: 20  # denoise_steps
+  loss_type: 'l1'  # schduler_config.loss_type
+  train_routine: 'Final'  # schduler_config.train_routine
+  sampling_routine: 'ddim'  # schduler_config.sampling_routine
+
+  # 原始目录结构：trainer_config
+  train_batch_size: 8  # trainer_config.train_batch_size
+  train_lr: 0.00002 # 2e-5 
+  train_num_steps: 10  # trainer_config.train_num_steps
+  gradient_accumulate_every: 2  # trainer_config.gradient_accumulate_every
+  ema_decay: 0.995  # trainer_config.ema_decay
+  fp16: False  # trainer_config.fp16
+  load_path: null  # trainer_config.load_path
+  save_and_sample_every: 5  # trainer_config.save_and_sample_every
+  dataset: 'mnist'  # trainer_config.dataset
+
+
+
+
+DCA_Sefusion_mnist_32:
+  dim: 64  # model_config.dim
+  dim_mults: [1, 2, 4, 8]  # model_config.dim_mults
+  img_size: 32  # model_config.img_size
+  channels: 3  # model_config.channels
+  name: 'DCA_Sefusion'  # model_config.name
+
+  # 原始目录结构：schduler_config
+  numsteps: 1000  # schduler_config.numsteps
+  loss_type: 'l1'  # schduler_config.loss_type
+  train_routine: 'Final'  # schduler_config.train_routine
+  sampling_routine: 'ddim'  # schduler_config.sampling_routine
+
+  # 原始目录结构：trainer_config
+  train_batch_size: 8  # trainer_config.train_batch_size
+  train_lr: 0.00002 # 2e-5  
+  train_num_steps: 10000  # trainer_config.train_num_steps
+  gradient_accumulate_every: 2  # trainer_config.gradient_accumulate_every
+  ema_decay: 0.995  # trainer_config.ema_decay
+  fp16: False  # trainer_config.fp16
+  load_path: null  # trainer_config.load_path
+  save_and_sample_every: 100  # trainer_config.save_and_sample_every
+  dataset: 'mnist'  # trainer_config.dataset
+

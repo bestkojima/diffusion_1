@@ -6,3 +6,4 @@ root_mnist_test/
 test_local/
 test*
 *.ipynb
+wandb/

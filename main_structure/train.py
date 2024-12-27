@@ -93,7 +93,8 @@ class Trainer(object):
         self.image_size = image_size
         self.gradient_accumulate_every = gradient_accumulate_every
         self.train_num_steps = train_num_steps
-
+        self.lr=train_lr
+        
         if dataset == 'train':
             print(dataset, "DA used")
             self.ds = Dataset_Aug1(folder, image_size)
@@ -182,12 +183,44 @@ class Trainer(object):
 
 
 
-    def train(self):
+    def train(self,config):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         backwards = partial(loss_backwards, self.fp16)
 
         self.step = 0
         acc_loss = 0
+        
+        #######################!!!wandb!!!###################
+        #TODO
+        import wandb
+        os.environ["WANDB_MODE"] = "offline" #  online comment
+        wandb.init(
+    # set the wandb project where this run will be logged
+        project="Diffusion_skip_connection",
+        name=config["name"],
+        notes="test_run",
+        tags=["test","test2"],
+    
+        # track hyperparameters and run metadata
+        config={"learning_rate": self.lr,
+                "architecture": "DCA+sefusion",
+                "train_num_steps": self.train_num_steps,
+                "result_folder": self.results_folder,
+                "image_size": self.image_size,
+                "train_batch_size": self.batch_size,
+                "save_and_sample_every":self.save_and_sample_every,
+                
+
+        }
+        )
+        wandb.config.update(config)
+
+
+
+
+
+
+        #######################!!!wandb!!!###################
 
 # 使用 tqdm 包装 while 循环
         with tqdm(total=self.train_num_steps, desc="Training", unit="step") as pbar:
@@ -203,10 +236,30 @@ class Trainer(object):
                     if self.step % 100 == 0:
                         print(f'{self.step}: {loss.item()}')
                     u_loss += loss.item()
+                    
                     backwards(loss / self.gradient_accumulate_every, self.opt)
 
                 acc_loss = acc_loss + (u_loss / self.gradient_accumulate_every)
+                ######
+                
+                wandb.log({"loss": u_loss / self.gradient_accumulate_every})
+                
+               
+                # from utils import grad_norm
+                # try:
+                #     wandb.log({"grad_norm": grad_norm(self.ema_model.module.denoise_fn)}) # 梯度震荡
+                #     print(grad_norm(self.ema_model.module.denoise_fn))
+                # except Exception as e:
+                #     print("梯度震荡:"+str(e))
+                ##
 
+                # hidden_norm=0.0
+                # for i in self.ema_model.module.denoise_fn.skip_output:
+                #     hidden_norm += torch.norm(i,p=2).item()
+                # wandb.log({"hidden_norm": hidden_norm}) # 隐藏震荡
+                # print(hidden_norm)
+                
+                ###
                 self.opt.step()
                 self.opt.zero_grad()
 
@@ -217,28 +270,39 @@ class Trainer(object):
                     milestone = self.step // self.save_and_sample_every
                     batches = self.batch_size
 
-                    data_1 = next(self.dl)
+                    data_1 = next(self.dl) # 原数据
                     data_2 = torch.randn_like(data_1)
                     og_img = data_2.to(device) #修改原图
     
                     xt, direct_recons, all_images = self.ema_model.module.sample(batch_size=batches, img=og_img)
 
-                    og_img = (og_img + 1) * 0.5
-                    utils.save_image(og_img, str(self.results_folder / f'sample-og-{milestone}.png'), nrow=6)
-
+                    #生成图像
                     all_images = (all_images + 1) * 0.5
                     utils.save_image(all_images, str(self.results_folder / f'sample-recon-{milestone}.png'), nrow=6)
 
-                    direct_recons = (direct_recons + 1) * 0.5
-                    utils.save_image(direct_recons, str(self.results_folder / f'sample-direct_recons-{milestone}.png'), nrow=6)
+                    # direct_recons = (direct_recons + 1) * 0.5
+                    # utils.save_image(direct_recons, str(self.results_folder / f'sample-direct_recons-{milestone}.png'), nrow=6)
 
-                    xt = (xt + 1) * 0.5
-                    utils.save_image(xt, str(self.results_folder / f'sample-xt-{milestone}.png'), nrow=6)
+                    # xt = (xt + 1) * 0.5
+                    # utils.save_image(xt, str(self.results_folder / f'sample-xt-{milestone}.png'), nrow=6)
 
                     acc_loss = acc_loss / (self.save_and_sample_every + 1)
                     print(f'Mean of last {self.step}: {acc_loss}')
                     acc_loss = 0
+                    ####
+                    print(data_1.shape)
+                    print(all_images.shape)
+                    #fid ssim rmse
+                    from pytorch_msssim import ssim
+                    rmse_score = torch.sqrt(torch.mean((data_1.to(device) - all_images) ** 2))
+                    wandb.log({"rmse_score": rmse_score.item()})
+                    ssim_score = ssim(data_1.to(device), all_images, data_range=1, size_average=True)
+                    wandb.log({"ssim_score": ssim_score.item()})
+                    from criteria.fid_score import calculate_fid_given_samples
+                    fid_score = calculate_fid_given_samples(samples=[data_1.to("cpu"), all_images.to("cpu")],batch_size=batches)
+                    wandb.log({"fid_score": fid_score})
 
+                    ####
                     self.save()
                     if self.step % (self.save_and_sample_every * 100) == 0:
                         self.save(self.step)
